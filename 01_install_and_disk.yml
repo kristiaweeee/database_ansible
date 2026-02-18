@@ -1,0 +1,40 @@
+- name: Установка postgres и монтирование диска
+  hosts: all
+  become: yes
+
+  tasks:
+
+    - name: Установка PostgreSQL
+      apt:
+        name:
+          - postgresql-17
+          - postgresql-contrib
+        update_cache: yes
+        state: present
+
+    - name: Создать файловую систему на /dev/sdb (если есть)
+      filesystem:
+        fstype: ext4
+        dev: /dev/sdb
+      ignore_errors: yes
+
+    - name: Создать /pg_data
+      file:
+        path: /pg_data
+        state: directory
+
+    - name: Монтировать /dev/sdb в /pg_data
+      mount:
+        path: /pg_data
+        src: /dev/sdb
+        fstype: ext4
+        state: mounted
+      ignore_errors: yes
+
+    - name: Создать /pg_data/16
+      file:
+        path: /pg_data/16
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0700'

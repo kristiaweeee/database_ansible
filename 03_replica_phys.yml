@@ -1,0 +1,36 @@
+- name: Физическая реплика
+  hosts: replica
+  become: yes
+
+  tasks:
+
+    - name: Остановить postgres
+      shell: sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 stop || true
+
+    - name: Очистить каталог
+      shell: rm -rf /pg_data/16/*
+
+    - name: pg_basebackup
+      shell: sudo -u postgres PGPASSWORD=12345678 /usr/lib/postgresql/17/bin/pg_basebackup -h 192.168.193.187 -U replicator -D /pg_data/16 -Fp -Xs -P -R
+
+
+    - name: Исправить владельца
+      file:
+        path: /pg_data/16
+        owner: postgres
+        group: postgres
+        recurse: yes
+
+    - name: Исправить права каталога
+      file:
+        path: /pg_data/16
+        mode: '0700'
+
+    - name: standby.signal
+      file:
+        path: /pg_data/16/standby.signal
+        state: touch
+        owner: postgres
+
+    - name: Запуск реплики
+      shell: sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 start

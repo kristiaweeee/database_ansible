@@ -1,0 +1,54 @@
+- name: Мастер PostgreSQL
+  hosts: master
+  become: yes
+
+  tasks:
+
+    - name: Остановить postgres
+      shell: sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 stop || true
+
+    - name: Очистить каталог
+      shell: rm -rf /pg_data/16/*
+
+    - name: initdb
+      shell: sudo -u postgres /usr/lib/postgresql/17/bin/initdb -D /pg_data/16
+
+    - name: postgresql.conf
+      lineinfile:
+        path: /pg_data/16/postgresql.conf
+        line: "{{ item }}"
+      loop:
+        - "listen_addresses='*'"
+        - "logging_collector=on"
+        - "log_directory='log'"
+        - "log_statement='all'"
+        - "shared_preload_libraries='pg_stat_statements'"
+        - "wal_level=replica"
+        - "max_wal_senders=5"
+
+    - name: pg_hba.conf
+      blockinfile:
+        path: /pg_data/16/pg_hba.conf
+        block: |
+          host all all 0.0.0.0/0 md5
+          host replication replicator 0.0.0.0/0 md5
+
+    - name: Запуск postgres
+      shell: sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 start
+
+    - name: База bench
+      shell: sudo -u postgres createdb bench
+
+    - name: Пользователь pgbench
+      shell: sudo -u postgres psql -c "create user pgbench password '12345678'; grant all on database bench to pgbench;"
+
+    - name: Пользователь replicator
+      shell: sudo -u postgres psql -c "create user replicator replication password '12345678';"
+
+    - name: pg_stat_statements
+      shell: sudo -u postgres psql bench -c "create extension pg_stat_statements;"
+
+    - name: Тестовые таблицы
+      shell: |
+        sudo -u postgres psql bench -c "create table users(id serial,name text);"
+        sudo -u postgres psql bench -c "insert into users(name) values('anna'),('ivan');"

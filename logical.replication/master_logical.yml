@@ -1,0 +1,40 @@
+- name: Мастер PostgreSQL (логическая репликация)
+  hosts: master
+  become: yes
+
+  tasks:
+    - name: Убедиться, что каталог conf.d есть
+      file:
+        path: /pg_data/16/conf.d
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0755'
+
+    - name: Подключить conf.d в postgresql.conf
+      lineinfile:
+        path: /pg_data/16/postgresql.conf
+        regexp: "^#?include_dir"
+        line: "include_dir = 'conf.d'"
+
+    - name: Скопировать конфигурацию мастера для логической репликации
+      copy:
+        src: master_logical.conf
+        dest: /pg_data/16/conf.d/master_logical.conf
+        owner: postgres
+        group: postgres
+        mode: '0644'
+
+    - name: Перезапустить PostgreSQL
+      shell: /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 restart
+      become_user: postgres
+
+    - name: Создать тестовую таблицу для логической репликации
+      shell: |
+        psql bench -c "CREATE TABLE logical_test(id serial PRIMARY KEY, name text);"
+        psql bench -c "INSERT INTO logical_test(name) VALUES('alice'),('bob');"
+      become_user: postgres
+
+    - name: Создать публикацию для логической репликации
+      shell: psql bench -c "CREATE PUBLICATION pub_all FOR ALL TABLES;"
+      become_user: postgres

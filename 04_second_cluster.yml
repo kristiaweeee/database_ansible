@@ -4,12 +4,18 @@
 
   tasks:
 
-    - name: Каталог
+    - name: Убедиться что каталог второго кластера пустой
+      file:
+        path: /pg_data/16-one-base
+        state: absent
+
+    - name: Создать каталог второго кластера
       file:
         path: /pg_data/16-one-base
         state: directory
         owner: postgres
         mode: '0700'
 
-    - name: initdb
-      shell: sudo -u postgres /usr/lib/postgresql/17/bin/initdb -D /pg_data/16-one-base
+    - name: Инициализация второго кластера
+      shell: /usr/lib/postgresql/17/bin/initdb -D /pg_data/16-one-base
+      become_user: postgres

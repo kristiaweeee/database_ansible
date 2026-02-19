@@ -1,0 +1,32 @@
+- name: Реплика PostgreSQL (логическая репликация)
+  hosts: replica
+  become: yes
+
+  vars:
+    pg_port: 5433
+    master_ip: 192.168.193.187
+
+  tasks:
+
+    - name: Создать базу bench если её нет
+      become_user: postgres
+      shell: |
+        psql -p {{ pg_port }} -tc "SELECT 1 FROM pg_database WHERE datname='bench';" | grep -q 1 || \
+        psql -p {{ pg_port }} -c "CREATE DATABASE bench;"
+
+    - name: Создать таблицу logical_test если её нет
+      become_user: postgres
+      shell: |
+        psql -p {{ pg_port }} bench -tc "SELECT 1 FROM pg_tables WHERE tablename='logical_test';" | grep -q 1 || \
+        psql -p {{ pg_port }} bench -c "CREATE TABLE logical_test (id SERIAL PRIMARY KEY, name TEXT);"
+
+    - name: Удалить подписку если она уже существует
+      become_user: postgres
+      shell: |
+        psql -p {{ pg_port }} bench -c "DROP SUBSCRIPTION IF EXISTS sub_all;"
+      ignore_errors: yes
+
+    - name: Создать подписку
+      become_user: postgres
+      shell: |
+        psql -p {{ pg_port }} bench -c "CREATE SUBSCRIPTION sub_all CONNECTION 'host={{ master_ip }} user=replicator password=12345678 dbname=bench' PUBLICATION pub_all;"

@@ -4,29 +4,50 @@
 
   tasks:
 
-    - name: Остановить postgres
-      shell: sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 stop || true
+    - name: Остановить postgres (если запущен)
+      shell: /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 stop
+      become_user: postgres
+      ignore_errors: yes
 
-    - name: Очистить каталог
+    - name: Убедиться что каталог /pg_data/16 существует
+      file:
+        path: /pg_data/16
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0700'
+
+    - name: Очистить каталог данных
       shell: rm -rf /pg_data/16/*
+      ignore_errors: yes
 
-    - name: initdb
-      shell: sudo -u postgres /usr/lib/postgresql/17/bin/initdb -D /pg_data/16
+    - name: Инициализация кластера
+      shell: /usr/lib/postgresql/17/bin/initdb -D /pg_data/16
+      become_user: postgres
 
-    - name: postgresql.conf
+    - name: Создать каталог conf.d
+      file:
+        path: /pg_data/16/conf.d
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0755'
+
+    - name: Подключить conf.d
       lineinfile:
         path: /pg_data/16/postgresql.conf
-        line: "{{ item }}"
-      loop:
-        - "listen_addresses='*'"
-        - "logging_collector=on"
-        - "log_directory='log'"
-        - "log_statement='all'"
-        - "shared_preload_libraries='pg_stat_statements'"
-        - "wal_level=replica"
-        - "max_wal_senders=5"
+        regexp: "^#?include_dir"
+        line: "include_dir = 'conf.d'"
 
-    - name: pg_hba.conf
+    - name: Скопировать конфигурацию мастера
+      copy:
+        src: master.conf
+        dest: /pg_data/16/conf.d/master.conf
+        owner: postgres
+        group: postgres
+        mode: '0644'
+
+    - name: Настроить pg_hba.conf
       blockinfile:
         path: /pg_data/16/pg_hba.conf
         block: |
@@ -34,21 +55,32 @@
           host replication replicator 0.0.0.0/0 md5
 
     - name: Запуск postgres
-      shell: sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 start
+      shell: /usr/lib/postgresql/17/bin/pg_ctl -D /pg_data/16 start
+      become_user: postgres
 
-    - name: База bench
-      shell: sudo -u postgres createdb bench
+    - name: Создать базу bench если не существует
+      shell: psql -tc "SELECT 1 FROM pg_database WHERE datname='bench'" | grep -q 1 || createdb bench
+      become_user: postgres
 
-    - name: Пользователь pgbench
-      shell: sudo -u postgres psql -c "create user pgbench password '12345678'; grant all on database bench to pgbench;"
-
-    - name: Пользователь replicator
-      shell: sudo -u postgres psql -c "create user replicator replication password '12345678';"
-
-    - name: pg_stat_statements
-      shell: sudo -u postgres psql bench -c "create extension pg_stat_statements;"
-
-    - name: Тестовые таблицы
+    - name: Создать пользователя pgbench если не существует
       shell: |
-        sudo -u postgres psql bench -c "create table users(id serial,name text);"
-        sudo -u postgres psql bench -c "insert into users(name) values('anna'),('ivan');"
+        psql -tc "SELECT 1 FROM pg_roles WHERE rolname='pgbench'" | grep -q 1 || \
+        psql -c "CREATE USER pgbench WITH PASSWORD '12345678';"
+        psql -c "GRANT ALL PRIVILEGES ON DATABASE bench TO pgbench;"
+      become_user: postgres
+
+    - name: Создать пользователя replicator если не существует
+      shell: |
+        psql -tc "SELECT 1 FROM pg_roles WHERE rolname='replicator'" | grep -q 1 || \
+        psql -c "CREATE USER replicator WITH REPLICATION PASSWORD '12345678';"
+      become_user: postgres
+
+    - name: Подключить pg_stat_statements
+      shell: psql bench -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+      become_user: postgres
+
+    - name: Создать тестовую таблицу
+      shell: |
+        psql bench -c "CREATE TABLE IF NOT EXISTS users(id serial PRIMARY KEY, name text);"
+        psql bench -c "INSERT INTO users(name) VALUES('anna'),('ivan');"
+      become_user: postgres
